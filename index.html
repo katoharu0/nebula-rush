@@ -723,11 +723,11 @@ function render(){
     }
   }
 
-  // パーティクル
+  // パーティクル（四角→丸に変更）
   for(const p of parts){
     const a=p.life/p.maxLife; ctx.globalAlpha=a;
     if(p.ring){ const prog=1-a; ctx.strokeStyle=p.color; ctx.lineWidth=2*a; ctx.beginPath(); ctx.arc(p.x,p.y,p.grow?prog*45:p.sz,0,Math.PI*2); ctx.stroke(); }
-    else { ctx.fillStyle=p.color; ctx.fillRect(p.x-p.sz/2,p.y-p.sz/2,p.sz,p.sz); }
+    else { ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.sz/2,0,Math.PI*2); ctx.fill(); }
     ctx.globalAlpha=1;
   }
 
@@ -834,9 +834,12 @@ function drawGameOver(){
 // ================================================================
 function loop(){
   try{ update(); render(); } catch(e){
-    // クラッシュ時も画面に表示してループを止めない
-    ctx.fillStyle='rgba(0,0,0,.8)'; ctx.fillRect(0,0,C.width,C.height);
-    ctx.fillStyle='#ff4444'; ctx.font='bold 14px monospace'; ctx.textAlign='center';
+    // エラー時はスケールをリセットしてから表示（ズレ防止）
+    try{ ctx.restore(); } catch(_){}
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.fillStyle='rgba(0,0,0,.85)'; ctx.fillRect(0,0,C.width,C.height);
+    ctx.fillStyle='#ff4444'; ctx.font=`bold ${Math.round(C.width/22)}px monospace`;
+    ctx.textAlign='center';
     ctx.fillText('ERROR: '+e.message,C.width/2,C.height/2);
     console.error(e);
   }
