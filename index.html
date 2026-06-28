@@ -90,6 +90,10 @@ let wave=0, waveT=0, spawnQ=[];
 const keys = {};
 const ptr = { x:GW/2, y:GH-120, down:false };
 let lastPtr = { x:GW/2, y:GH-120 };
+// 仮想スティック状態
+const joy = { active:false, cx:0, cy:0, kx:0, ky:0 };
+const JOY_R = 58;   // 外円の半径
+const JOY_DEAD = 8; // この距離以内はニュートラル（停止）
 
 function toG(cx, cy) { return { x:(cx-parseFloat(C.style.left))/scale, y:(cy-parseFloat(C.style.top))/scale }; }
 
@@ -113,23 +117,38 @@ window.addEventListener('mouseup', () => { ptr.down=false; });
 C.addEventListener('touchstart', e => {
   e.preventDefault();
   const t=e.changedTouches[0], p=toG(t.clientX,t.clientY);
-  Object.assign(ptr, p, {down:true}); lastPtr={...p};
-  if (phase==='title'||phase==='gameover') startGame();
+  joy.active=true; joy.cx=p.x; joy.cy=p.y; joy.kx=p.x; joy.ky=p.y;
+  ptr.x=p.x; ptr.y=p.y; ptr.down=true;
+  if(phase==='title'||phase==='gameover') startGame();
 },{passive:false});
 C.addEventListener('touchmove', e => {
   e.preventDefault();
   const t=e.changedTouches[0], p=toG(t.clientX,t.clientY);
-  ptr.x = clamp(ptr.x + p.x - lastPtr.x, 18, GW-18);
-  ptr.y = clamp(ptr.y + p.y - lastPtr.y, 40, GH-40);
-  lastPtr = {...p};
+  const dx=p.x-joy.cx, dy=p.y-joy.cy;
+  const dist=Math.hypot(dx,dy), r=Math.min(dist,JOY_R), a=Math.atan2(dy,dx);
+  joy.kx=joy.cx+Math.cos(a)*r; joy.ky=joy.cy+Math.sin(a)*r;
 },{passive:false});
-window.addEventListener('touchend', e => { e.preventDefault(); ptr.down=false; },{passive:false});
+window.addEventListener('touchend', e => {
+  e.preventDefault(); joy.active=false; ptr.down=false;
+  ptr.x=P.x; ptr.y=P.y; // 指を離したら自機その場で停止
+},{passive:false});
 
 // ================================================================
 // HELPERS
 // ================================================================
 function clamp(v,a,b){ return v<a?a:v>b?b:v; }
 function rnd(a,b){ return a+Math.random()*(b-a); }
+// 長いテキストをmaxWidth幅で折り返して複数行描画するヘルパー
+function wrapText(ctx,text,x,y,maxW,lh){
+  const words=text.split(' '); let line='', lines=[];
+  for(const w of words){
+    const t=line?line+' '+w:w;
+    if(ctx.measureText(t).width>maxW&&line){ lines.push(line); line=w; } else { line=t; }
+  }
+  if(line) lines.push(line);
+  const sy=y-(lines.length-1)*lh/2;
+  for(let i=0;i<lines.length;i++) ctx.fillText(lines[i],x,sy+i*lh);
+}
 function lerp(a,b,t){ return a+(b-a)*t; }
 
 // ================================================================
@@ -286,9 +305,16 @@ function updatePlayer(){
   if(keys['ArrowUp']||keys['w']||keys['W']) ptr.y=clamp(ptr.y-spd,40,GH-40);
   if(keys['ArrowDown']||keys['s']||keys['S']) ptr.y=clamp(ptr.y+spd,40,GH-40);
 
-  // タッチ中は指の80px上に自機を表示（指と重なって見えなくなるのを防ぐ）
-  const touchOY = ptr.down ? 80 : 0;
-  P.x=lerp(P.x,ptr.x,.22); P.y=lerp(P.y,clamp(ptr.y-touchOY,40,GH-40),.22);
+  // スティック入力：傾き量に比例した速度でptrを更新
+  if(joy.active){
+    const dx=joy.kx-joy.cx, dy=joy.ky-joy.cy, dist=Math.hypot(dx,dy);
+    if(dist>JOY_DEAD){
+      const spd=5.5*(dist/JOY_R);
+      ptr.x=clamp(P.x+dx/dist*spd,18,GW-18);
+      ptr.y=clamp(P.y+dy/dist*spd,40,GH-40);
+    } else { ptr.x=P.x; ptr.y=P.y; }
+  }
+  P.x=lerp(P.x,ptr.x,.22); P.y=lerp(P.y,ptr.y,.22);
   P.x=clamp(P.x,18,GW-18); P.y=clamp(P.y,40,GH-40);
   if(frame%2===0) P.trail.push({x:P.x,y:P.y+14});
   if(P.trail.length>9) P.trail.shift();
@@ -784,6 +810,19 @@ function render(){
     ctx.globalAlpha=1;
   }
 
+  // 仮想スティック描画（プレイ中のみ）
+  if(joy.active && phase==='playing'){
+    ctx.save();
+    ctx.globalAlpha=0.25;
+    ctx.strokeStyle='#ffffff'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.arc(joy.cx,joy.cy,JOY_R,0,Math.PI*2); ctx.stroke();
+    ctx.globalAlpha=0.5;
+    ctx.fillStyle='#ffffff';
+    ctx.beginPath(); ctx.arc(joy.kx,joy.ky,22,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha=1;
+    ctx.restore();
+  }
+
   ctx.restore();
 }
 
@@ -810,7 +849,7 @@ function drawTitle(){
     ctx.fillStyle='#fff'; ctx.font='bold 16px monospace'; ctx.fillText('TAP / CLICK TO START',GW/2,GH/2+80);
   }
   ctx.fillStyle='#666'; ctx.font='11px monospace';
-  ctx.fillText('DRAG / TOUCH to move  ·  Auto fire',GW/2,GH/2+118);
+  ctx.fillText('VIRTUAL STICK to move  ·  Auto fire',GW/2,GH/2+118);
   ctx.fillText('WASD / Arrow keys also work',GW/2,GH/2+136);
   if(hi>0){ ctx.fillStyle='#ffdd00'; ctx.font='bold 13px monospace'; ctx.fillText('BEST: '+String(hi).padStart(8,'0'),GW/2,GH-55); }
 }
@@ -840,9 +879,9 @@ function loop(){
     try{ ctx.restore(); } catch(_){}
     ctx.setTransform(1,0,0,1,0,0);
     ctx.fillStyle='rgba(0,0,0,.85)'; ctx.fillRect(0,0,C.width,C.height);
-    ctx.fillStyle='#ff4444'; ctx.font=`bold ${Math.round(C.width/22)}px monospace`;
-    ctx.textAlign='center';
-    ctx.fillText('ERROR: '+e.message,C.width/2,C.height/2);
+    const fs=Math.round(C.width/22);
+    ctx.fillStyle='#ff4444'; ctx.font=`bold ${fs}px monospace`; ctx.textAlign='center';
+    wrapText(ctx,'ERROR: '+e.message,C.width/2,C.height/2,C.width*0.88,fs*1.45);
     console.error(e);
   }
   requestAnimationFrame(loop);
