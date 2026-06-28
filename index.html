@@ -71,6 +71,10 @@ function snd(type) {
 // ================================================================
 let phase = 'title';
 let score = 0, hi = +localStorage.getItem('nbr_hi') || 0;
+// スティック感度設定（0=LOW 1=MED 2=HIGH）
+const SENS_SPEEDS = [3.2, 5.5, 8.5];
+const SENS_NAMES  = ['LOW','MED','HIGH'];
+let sensIdx = +(localStorage.getItem('nbr_sens')||1);
 let combo = 0, comboT = 0;
 let shake = 0, frame = 0;
 let wavePhaseT = 0;
@@ -95,7 +99,13 @@ const joy = { active:false, cx:0, cy:0, kx:0, ky:0 };
 const JOY_R = 58;   // 外円の半径
 const JOY_DEAD = 8; // この距離以内はニュートラル（停止）
 
-function toG(cx, cy) { return { x:(cx-parseFloat(C.style.left))/scale, y:(cy-parseFloat(C.style.top))/scale }; }
+function toG(cx, cy) { return { x:(cx-(parseFloat(C.style.left)||0))/scale, y:(cy-(parseFloat(C.style.top)||0))/scale }; }
+// タイトル/ゲームオーバー画面の感度ボタン領域判定（-1=なし 0/1/2=ボタン番号）
+function hitSensBtn(px,py){
+  const bw=52,bh=28,gap=10,totalW=3*bw+2*gap,sx=(GW-totalW)/2,by=GH-68;
+  for(let i=0;i<3;i++){ const bx=sx+i*(bw+gap); if(px>=bx&&px<=bx+bw&&py>=by&&py<=by+bh) return i; }
+  return -1;
+}
 
 window.addEventListener('keydown', e => { keys[e.key]=true; });
 window.addEventListener('keyup',   e => { keys[e.key]=false; });
@@ -103,7 +113,11 @@ window.addEventListener('keyup',   e => { keys[e.key]=false; });
 C.addEventListener('mousedown', e => {
   const p = toG(e.clientX, e.clientY);
   Object.assign(ptr, p, {down:true}); lastPtr={...p};
-  if (phase==='title'||phase==='gameover') startGame();
+  if(phase==='title'||phase==='gameover'){
+    const si=hitSensBtn(p.x,p.y);
+    if(si>=0){ sensIdx=si; localStorage.setItem('nbr_sens',si); return; }
+    startGame();
+  }
 });
 C.addEventListener('mousemove', e => {
   if (!ptr.down) return;
@@ -117,9 +131,13 @@ window.addEventListener('mouseup', () => { ptr.down=false; });
 C.addEventListener('touchstart', e => {
   e.preventDefault();
   const t=e.changedTouches[0], p=toG(t.clientX,t.clientY);
+  if(phase==='title'||phase==='gameover'){
+    const si=hitSensBtn(p.x,p.y);
+    if(si>=0){ sensIdx=si; localStorage.setItem('nbr_sens',si); return; }
+    startGame(); return;
+  }
   joy.active=true; joy.cx=p.x; joy.cy=p.y; joy.kx=p.x; joy.ky=p.y;
   ptr.x=p.x; ptr.y=p.y; ptr.down=true;
-  if(phase==='title'||phase==='gameover') startGame();
 },{passive:false});
 C.addEventListener('touchmove', e => {
   e.preventDefault();
@@ -309,7 +327,7 @@ function updatePlayer(){
   if(joy.active){
     const dx=joy.kx-joy.cx, dy=joy.ky-joy.cy, dist=Math.hypot(dx,dy);
     if(dist>JOY_DEAD){
-      const spd=5.5*(dist/JOY_R);
+      const spd=SENS_SPEEDS[sensIdx]*(dist/JOY_R);
       ptr.x=clamp(P.x+dx/dist*spd,18,GW-18);
       ptr.y=clamp(P.y+dy/dist*spd,40,GH-40);
     } else { ptr.x=P.x; ptr.y=P.y; }
@@ -754,8 +772,8 @@ function render(){
   // パーティクル（四角→丸に変更）
   for(const p of parts){
     const a=p.life/p.maxLife; ctx.globalAlpha=a;
-    if(p.ring){ const prog=1-a; ctx.strokeStyle=p.color; ctx.lineWidth=2*a; ctx.beginPath(); ctx.arc(p.x,p.y,p.grow?prog*45:p.sz,0,Math.PI*2); ctx.stroke(); }
-    else { ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.sz/2,0,Math.PI*2); ctx.fill(); }
+    if(p.ring){ const prog=1-a; ctx.strokeStyle=p.color; ctx.lineWidth=2*a; ctx.beginPath(); ctx.arc(p.x,p.y,Math.max(0.5,p.grow?prog*45:p.sz),0,Math.PI*2); ctx.stroke(); }
+    else { ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,Math.max(0.5,p.sz/2),0,Math.PI*2); ctx.fill(); }
     ctx.globalAlpha=1;
   }
 
@@ -851,7 +869,25 @@ function drawTitle(){
   ctx.fillStyle='#666'; ctx.font='11px monospace';
   ctx.fillText('VIRTUAL STICK to move  ·  Auto fire',GW/2,GH/2+118);
   ctx.fillText('WASD / Arrow keys also work',GW/2,GH/2+136);
-  if(hi>0){ ctx.fillStyle='#ffdd00'; ctx.font='bold 13px monospace'; ctx.fillText('BEST: '+String(hi).padStart(8,'0'),GW/2,GH-55); }
+  if(hi>0){ ctx.fillStyle='#ffdd00'; ctx.font='bold 13px monospace'; ctx.fillText('BEST: '+String(hi).padStart(8,'0'),GW/2,GH-100); }
+  // 感度ボタン
+  drawSensButtons();
+}
+
+function drawSensButtons(){
+  const bw=52,bh=28,gap=10,totalW=3*bw+2*gap,sx=(GW-totalW)/2,by=GH-68;
+  ctx.fillStyle='#555'; ctx.font='10px monospace'; ctx.textAlign='center';
+  ctx.fillText('STICK SENSITIVITY',GW/2,by-10);
+  for(let i=0;i<3;i++){
+    const bx=sx+i*(bw+gap);
+    ctx.fillStyle=i===sensIdx?'#00ffff':'#1a1a2e';
+    ctx.fillRect(bx,by,bw,bh);
+    ctx.strokeStyle=i===sensIdx?'#00ffff':'#444'; ctx.lineWidth=1.5;
+    ctx.strokeRect(bx,by,bw,bh);
+    ctx.fillStyle=i===sensIdx?'#000':'#888';
+    ctx.font=`bold 12px monospace`; ctx.textAlign='center';
+    ctx.fillText(SENS_NAMES[i],bx+bw/2,by+bh/2+4);
+  }
 }
 
 function drawGameOver(){
@@ -868,6 +904,7 @@ function drawGameOver(){
   if(score>=hi&&score>0){ ctx.fillStyle='#ffdd00'; ctx.font='bold 15px monospace'; ctx.fillText('NEW RECORD!',GW/2,GH/2+58); }
   ctx.fillStyle='#888'; ctx.font='12px monospace'; ctx.fillText(`WAVE ${wave} reached`,GW/2,GH/2+88);
   if(Math.sin(frame*.09)>0){ ctx.fillStyle='#fff'; ctx.font='bold 16px monospace'; ctx.fillText('TAP TO RETRY',GW/2,GH/2+125); }
+  drawSensButtons();
 }
 
 // ================================================================
