@@ -196,8 +196,10 @@ const PNAMES={double:'DOUBLE',triple:'TRIPLE',laser:'LASER',
 // ================================================================
 function startGame(){
   phase='playing'; score=0; combo=0; comboT=0; shake=0; frame=0;
-  Object.assign(P,{x:GW/2,y:GH-120,hp:3,maxHp:3,inv:0,
+  Object.assign(P,{x:GW/2,y:GH-120,hp:3,maxHp:3,inv:90,
     weapon:'normal',weaponT:0,rapid:false,rapidT:0,shieldHp:0,fireT:0,trail:[]});
+  // ptrを自機初期位置にリセット（タップ位置に吸い寄せられるのを防ぐ）
+  ptr.x=GW/2; ptr.y=GH-120; lastPtr={x:GW/2,y:GH-120};
   bullets=[]; ebs=[]; enemies=[]; boss=null;
   parts=[]; pups=[]; fts=[];
   wave=0; waveT=0; wavePhaseT=0; spawnQ=[]; bossNum=0;
@@ -443,8 +445,9 @@ function applyPup(type){
 // COLLISION
 // ================================================================
 function hitPlayer(){
+  if(P.inv>0) return; // 無敵中は何もしない（二重ヒット防止）
   if(P.shieldHp>0){ P.shieldHp--; P.inv=60; shake=7; spark(P.x,P.y,'phit'); return; }
-  P.hp--; P.inv=130; shake=16; combo=0; comboT=0;
+  P.hp--; P.inv=150; shake=16; combo=0; comboT=0;
   spark(P.x,P.y,'phit'); snd('hit');
   if(P.hp<=0){ phase='dying'; dyingT=80; spark(P.x,P.y,'explode'); spark(P.x,P.y,'explode'); }
 }
@@ -829,7 +832,16 @@ function drawGameOver(){
 // ================================================================
 // LOOP
 // ================================================================
-function loop(){ update(); render(); requestAnimationFrame(loop); }
+function loop(){
+  try{ update(); render(); } catch(e){
+    // クラッシュ時も画面に表示してループを止めない
+    ctx.fillStyle='rgba(0,0,0,.8)'; ctx.fillRect(0,0,C.width,C.height);
+    ctx.fillStyle='#ff4444'; ctx.font='bold 14px monospace'; ctx.textAlign='center';
+    ctx.fillText('ERROR: '+e.message,C.width/2,C.height/2);
+    console.error(e);
+  }
+  requestAnimationFrame(loop);
+}
 initStars();
 loop();
 </script>
