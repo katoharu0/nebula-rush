@@ -286,7 +286,9 @@ function updatePlayer(){
   if(keys['ArrowUp']||keys['w']||keys['W']) ptr.y=clamp(ptr.y-spd,40,GH-40);
   if(keys['ArrowDown']||keys['s']||keys['S']) ptr.y=clamp(ptr.y+spd,40,GH-40);
 
-  P.x=lerp(P.x,ptr.x,.22); P.y=lerp(P.y,ptr.y,.22);
+  // タッチ中は指の80px上に自機を表示（指と重なって見えなくなるのを防ぐ）
+  const touchOY = ptr.down ? 80 : 0;
+  P.x=lerp(P.x,ptr.x,.22); P.y=lerp(P.y,clamp(ptr.y-touchOY,40,GH-40),.22);
   P.x=clamp(P.x,18,GW-18); P.y=clamp(P.y,40,GH-40);
   if(frame%2===0) P.trail.push({x:P.x,y:P.y+14});
   if(P.trail.length>9) P.trail.shift();
