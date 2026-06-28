@@ -23,6 +23,9 @@ canvas { display:block; }
 // ================================================================
 const C = document.getElementById('c');
 const ctx = C.getContext('2d');
+// iOS SafariはNaN/Infinity/0の半径をarc()に渡すとmoveTo例外でクラッシュするため全呼び出しをガード
+const _arc0 = ctx.arc.bind(ctx);
+ctx.arc = (x,y,r,s,e,ccw) => { if(Number.isFinite(x)&&Number.isFinite(y)&&r>0) _arc0(x,y,r,s,e,ccw); };
 const GW = 390, GH = 700;
 let scale = 1, offX = 0, offY = 0;
 
@@ -71,10 +74,10 @@ function snd(type) {
 // ================================================================
 let phase = 'title';
 let score = 0, hi = +localStorage.getItem('nbr_hi') || 0;
-// スティック感度設定（0=LOW 1=MED 2=HIGH）
-const SENS_SPEEDS = [3.2, 5.5, 8.5];
-const SENS_NAMES  = ['LOW','MED','HIGH'];
-let sensIdx = +(localStorage.getItem('nbr_sens')||1);
+// スティック感度設定（連続値、タイトル画面はプリセット3段階）
+const SENS_NAMES   = ['LOW','MED','HIGH'];
+const SENS_PRESETS = [2.5, 5.5, 9.0]; // タイトル画面のボタン用プリセット
+let sensSpeed = +(localStorage.getItem('nbr_sens_spd')||5.5); // 実際に使う速度（min=1.5 max=12）
 let combo = 0, comboT = 0;
 let shake = 0, frame = 0;
 let wavePhaseT = 0;
@@ -106,43 +109,47 @@ function hitSensBtn(px,py){
   for(let i=0;i<3;i++){ const bx=sx+i*(bw+gap); if(px>=bx&&px<=bx+bw&&py>=by&&py<=by+bh) return i; }
   return -1;
 }
-// プレイ中の上部感度ボタン（タップで LOW→MED→HIGH と循環）
-const SENS_PB = { x:GW/2-36, y:6, w:72, h:26 }; // ボタン矩形
-function hitSensPB(px,py){ return px>=SENS_PB.x&&px<=SENS_PB.x+SENS_PB.w&&py>=SENS_PB.y&&py<=SENS_PB.y+SENS_PB.h; }
+// プレイ中の感度スライダー（上部中央、WAVE〜スコア の間）
+const SL = { x:70, y:7, w:206, h:22, min:1.5, max:12.0 };
+const slider = { dragging:false };
+function hitSlider(px,py){ return px>=SL.x-8&&px<=SL.x+SL.w+8&&py>=SL.y-6&&py<=SL.y+SL.h+6; }
+function sliderSpeed(px){ return SL.min+clamp((px-SL.x)/SL.w,0,1)*(SL.max-SL.min); }
+function sensKnobX(){ return SL.x+clamp((sensSpeed-SL.min)/(SL.max-SL.min),0,1)*SL.w; }
 
 window.addEventListener('keydown', e => { keys[e.key]=true; });
 window.addEventListener('keyup',   e => { keys[e.key]=false; });
 
 C.addEventListener('mousedown', e => {
   const p = toG(e.clientX, e.clientY);
-  Object.assign(ptr, p, {down:true}); lastPtr={...p};
   if(phase==='playing'||phase==='bossWarn'){
-    if(hitSensPB(p.x,p.y)){ sensIdx=(sensIdx+1)%3; localStorage.setItem('nbr_sens',sensIdx); return; }
+    if(hitSlider(p.x,p.y)){ slider.dragging=true; sensSpeed=sliderSpeed(p.x); localStorage.setItem('nbr_sens_spd',sensSpeed); return; }
   }
   if(phase==='title'||phase==='gameover'){
     const si=hitSensBtn(p.x,p.y);
-    if(si>=0){ sensIdx=si; localStorage.setItem('nbr_sens',si); return; }
-    startGame();
+    if(si>=0){ sensSpeed=SENS_PRESETS[si]; localStorage.setItem('nbr_sens_spd',sensSpeed); return; }
+    startGame(); return;
   }
+  Object.assign(ptr, p, {down:true}); lastPtr={...p};
 });
 C.addEventListener('mousemove', e => {
-  if (!ptr.down) return;
   const p = toG(e.clientX, e.clientY);
+  if(slider.dragging){ sensSpeed=sliderSpeed(p.x); localStorage.setItem('nbr_sens_spd',sensSpeed); return; }
+  if (!ptr.down) return;
   ptr.x = clamp(ptr.x + p.x - lastPtr.x, 18, GW-18);
   ptr.y = clamp(ptr.y + p.y - lastPtr.y, 40, GH-40);
   lastPtr = {...p};
 });
-window.addEventListener('mouseup', () => { ptr.down=false; });
+window.addEventListener('mouseup', () => { slider.dragging=false; ptr.down=false; });
 
 C.addEventListener('touchstart', e => {
   e.preventDefault();
   const t=e.changedTouches[0], p=toG(t.clientX,t.clientY);
   if(phase==='playing'||phase==='bossWarn'){
-    if(hitSensPB(p.x,p.y)){ sensIdx=(sensIdx+1)%3; localStorage.setItem('nbr_sens',sensIdx); return; }
+    if(hitSlider(p.x,p.y)){ slider.dragging=true; sensSpeed=sliderSpeed(p.x); localStorage.setItem('nbr_sens_spd',sensSpeed); return; }
   }
   if(phase==='title'||phase==='gameover'){
     const si=hitSensBtn(p.x,p.y);
-    if(si>=0){ sensIdx=si; localStorage.setItem('nbr_sens',si); return; }
+    if(si>=0){ sensSpeed=SENS_PRESETS[si]; localStorage.setItem('nbr_sens_spd',sensSpeed); return; }
     startGame(); return;
   }
   joy.active=true; joy.cx=p.x; joy.cy=p.y; joy.kx=p.x; joy.ky=p.y;
@@ -151,13 +158,14 @@ C.addEventListener('touchstart', e => {
 C.addEventListener('touchmove', e => {
   e.preventDefault();
   const t=e.changedTouches[0], p=toG(t.clientX,t.clientY);
+  if(slider.dragging){ sensSpeed=sliderSpeed(p.x); localStorage.setItem('nbr_sens_spd',sensSpeed); return; }
   const dx=p.x-joy.cx, dy=p.y-joy.cy;
   const dist=Math.hypot(dx,dy), r=Math.min(dist,JOY_R), a=Math.atan2(dy,dx);
   joy.kx=joy.cx+Math.cos(a)*r; joy.ky=joy.cy+Math.sin(a)*r;
 },{passive:false});
 window.addEventListener('touchend', e => {
-  e.preventDefault(); joy.active=false; ptr.down=false;
-  ptr.x=P.x; ptr.y=P.y; // 指を離したら自機その場で停止
+  e.preventDefault(); slider.dragging=false; joy.active=false; ptr.down=false;
+  ptr.x=P.x; ptr.y=P.y;
 },{passive:false});
 
 // ================================================================
@@ -336,7 +344,7 @@ function updatePlayer(){
   if(joy.active){
     const dx=joy.kx-joy.cx, dy=joy.ky-joy.cy, dist=Math.hypot(dx,dy);
     if(dist>JOY_DEAD){
-      const spd=SENS_SPEEDS[sensIdx]*(dist/JOY_R);
+      const spd=sensSpeed*(dist/JOY_R);
       ptr.x=clamp(P.x+dx/dist*spd,18,GW-18);
       ptr.y=clamp(P.y+dy/dist*spd,40,GH-40);
     } else { ptr.x=P.x; ptr.y=P.y; }
@@ -800,12 +808,14 @@ function render(){
   ctx.fillText('HI '+String(hi).padStart(8,'0'),GW-10,39);
   ctx.fillStyle='#fff'; ctx.font='bold 13px monospace'; ctx.textAlign='left';
   ctx.fillText(`WAVE ${wave}`,10,26);
-  // プレイ中感度ボタン（上部中央）
-  const {x:pbx,y:pby,w:pbw,h:pbh}=SENS_PB;
-  ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(pbx,pby,pbw,pbh);
-  ctx.strokeStyle='#446'; ctx.lineWidth=1; ctx.strokeRect(pbx,pby,pbw,pbh);
-  ctx.fillStyle='#aaaacc'; ctx.font='bold 11px monospace'; ctx.textAlign='center';
-  ctx.fillText('SPD:'+SENS_NAMES[sensIdx],GW/2,pby+pbh/2+4);
+  // プレイ中感度スライダー（上部中央、WAVE〜スコアの隙間）
+  const kx=sensKnobX();
+  ctx.fillStyle='rgba(0,0,0,0.52)'; ctx.fillRect(SL.x-6,SL.y-2,SL.w+12,SL.h+4); // 背景
+  ctx.fillStyle='#2a2a3a'; ctx.fillRect(SL.x,SL.y+SL.h/2-2,SL.w,4); // レール（暗）
+  ctx.fillStyle='#0099ff'; ctx.fillRect(SL.x,SL.y+SL.h/2-2,kx-SL.x,4); // レール（埋まり）
+  ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.arc(kx,SL.y+SL.h/2,9,0,Math.PI*2); ctx.fill(); // ノブ
+  ctx.fillStyle='rgba(0,0,0,0.75)'; ctx.font='bold 8px monospace'; ctx.textAlign='center';
+  ctx.fillText('SENS',kx,SL.y+SL.h/2+3);
   // HP
   for(let i=0;i<P.maxHp;i++){
     ctx.fillStyle=i<P.hp?'#ff4444':'#2a1010';
@@ -895,12 +905,11 @@ function drawSensButtons(){
   ctx.fillText('STICK SENSITIVITY',GW/2,by-10);
   for(let i=0;i<3;i++){
     const bx=sx+i*(bw+gap);
-    ctx.fillStyle=i===sensIdx?'#00ffff':'#1a1a2e';
-    ctx.fillRect(bx,by,bw,bh);
-    ctx.strokeStyle=i===sensIdx?'#00ffff':'#444'; ctx.lineWidth=1.5;
-    ctx.strokeRect(bx,by,bw,bh);
-    ctx.fillStyle=i===sensIdx?'#000':'#888';
-    ctx.font=`bold 12px monospace`; ctx.textAlign='center';
+    const active=Math.abs(SENS_PRESETS[i]-sensSpeed)<1.5; // 現在のsensSpeedに近いボタンを強調
+    ctx.fillStyle=active?'#00ffff':'#1a1a2e'; ctx.fillRect(bx,by,bw,bh);
+    ctx.strokeStyle=active?'#00ffff':'#444'; ctx.lineWidth=1.5; ctx.strokeRect(bx,by,bw,bh);
+    ctx.fillStyle=active?'#000':'#888';
+    ctx.font='bold 12px monospace'; ctx.textAlign='center';
     ctx.fillText(SENS_NAMES[i],bx+bw/2,by+bh/2+4);
   }
 }
