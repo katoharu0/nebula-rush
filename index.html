@@ -106,6 +106,9 @@ function hitSensBtn(px,py){
   for(let i=0;i<3;i++){ const bx=sx+i*(bw+gap); if(px>=bx&&px<=bx+bw&&py>=by&&py<=by+bh) return i; }
   return -1;
 }
+// プレイ中の上部感度ボタン（タップで LOW→MED→HIGH と循環）
+const SENS_PB = { x:GW/2-36, y:6, w:72, h:26 }; // ボタン矩形
+function hitSensPB(px,py){ return px>=SENS_PB.x&&px<=SENS_PB.x+SENS_PB.w&&py>=SENS_PB.y&&py<=SENS_PB.y+SENS_PB.h; }
 
 window.addEventListener('keydown', e => { keys[e.key]=true; });
 window.addEventListener('keyup',   e => { keys[e.key]=false; });
@@ -113,6 +116,9 @@ window.addEventListener('keyup',   e => { keys[e.key]=false; });
 C.addEventListener('mousedown', e => {
   const p = toG(e.clientX, e.clientY);
   Object.assign(ptr, p, {down:true}); lastPtr={...p};
+  if(phase==='playing'||phase==='bossWarn'){
+    if(hitSensPB(p.x,p.y)){ sensIdx=(sensIdx+1)%3; localStorage.setItem('nbr_sens',sensIdx); return; }
+  }
   if(phase==='title'||phase==='gameover'){
     const si=hitSensBtn(p.x,p.y);
     if(si>=0){ sensIdx=si; localStorage.setItem('nbr_sens',si); return; }
@@ -131,6 +137,9 @@ window.addEventListener('mouseup', () => { ptr.down=false; });
 C.addEventListener('touchstart', e => {
   e.preventDefault();
   const t=e.changedTouches[0], p=toG(t.clientX,t.clientY);
+  if(phase==='playing'||phase==='bossWarn'){
+    if(hitSensPB(p.x,p.y)){ sensIdx=(sensIdx+1)%3; localStorage.setItem('nbr_sens',sensIdx); return; }
+  }
   if(phase==='title'||phase==='gameover'){
     const si=hitSensBtn(p.x,p.y);
     if(si>=0){ sensIdx=si; localStorage.setItem('nbr_sens',si); return; }
@@ -791,6 +800,12 @@ function render(){
   ctx.fillText('HI '+String(hi).padStart(8,'0'),GW-10,39);
   ctx.fillStyle='#fff'; ctx.font='bold 13px monospace'; ctx.textAlign='left';
   ctx.fillText(`WAVE ${wave}`,10,26);
+  // プレイ中感度ボタン（上部中央）
+  const {x:pbx,y:pby,w:pbw,h:pbh}=SENS_PB;
+  ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(pbx,pby,pbw,pbh);
+  ctx.strokeStyle='#446'; ctx.lineWidth=1; ctx.strokeRect(pbx,pby,pbw,pbh);
+  ctx.fillStyle='#aaaacc'; ctx.font='bold 11px monospace'; ctx.textAlign='center';
+  ctx.fillText('SPD:'+SENS_NAMES[sensIdx],GW/2,pby+pbh/2+4);
   // HP
   for(let i=0;i<P.maxHp;i++){
     ctx.fillStyle=i<P.hp?'#ff4444':'#2a1010';
