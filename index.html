@@ -25,7 +25,7 @@ const C = document.getElementById('c');
 const ctx = C.getContext('2d');
 // iOS SafariはNaN/Infinity/0の半径をarc()に渡すとmoveTo例外でクラッシュするため全呼び出しをガード
 const _arc0 = ctx.arc.bind(ctx);
-ctx.arc = (x,y,r,s,e,ccw) => { if(Number.isFinite(x)&&Number.isFinite(y)&&r>0) _arc0(x,y,r,s,e,ccw); };
+ctx.arc = (x,y,r,s,e,ccw) => { if(Number.isFinite(x)&&Number.isFinite(y)&&Number.isFinite(r)&&r>0) _arc0(x,y,r,s,e,ccw); };
 const GW = 390, GH = 700;
 let scale = 1, offX = 0, offY = 0;
 
@@ -110,10 +110,10 @@ function hitSensBtn(px,py){
   return -1;
 }
 // プレイ中の感度スライダー（上部中央、WAVE〜スコア の間）
-const SL = { x:70, y:7, w:206, h:22, min:1.5, max:12.0 };
+const SL = { x:70, y:7, w:206, h:22, min:1.5, max:20.0 };
 const slider = { dragging:false };
 function hitSlider(px,py){ return px>=SL.x-8&&px<=SL.x+SL.w+8&&py>=SL.y-6&&py<=SL.y+SL.h+6; }
-function sliderSpeed(px){ return SL.min+clamp((px-SL.x)/SL.w,0,1)*(SL.max-SL.min); }
+function sliderSpeed(px){ return Number.isFinite(px) ? SL.min+clamp((px-SL.x)/SL.w,0,1)*(SL.max-SL.min) : SL.min; }
 function sensKnobX(){ return SL.x+clamp((sensSpeed-SL.min)/(SL.max-SL.min),0,1)*SL.w; }
 
 window.addEventListener('keydown', e => { keys[e.key]=true; });
@@ -639,7 +639,7 @@ function render(){
     ctx.shadowColor=clr; ctx.shadowBlur=10;
     ctx.strokeStyle=clr; ctx.lineWidth=1.8;
     ctx.beginPath();
-    for(let i=0;i<5;i++){ const a=i*Math.PI*2/5-Math.PI/2; (i?ctx.lineTo:ctx.moveTo)(Math.cos(a)*10,Math.sin(a)*10); }
+    for(let i=0;i<5;i++){ const a=i*Math.PI*2/5-Math.PI/2; const px=Math.cos(a)*10,py=Math.sin(a)*10; if(i) ctx.lineTo(px,py); else ctx.moveTo(px,py); }
     ctx.closePath(); ctx.stroke();
     ctx.rotate(-p.ph); ctx.shadowBlur=0;
     ctx.fillStyle=clr; ctx.font='bold 7px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
